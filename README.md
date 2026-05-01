@@ -8,6 +8,40 @@ For Mac Silicon (arm64), the [latest releases are here](https://github.com/tikka
 
 For x86 builds, visit the [project site](http://macdown.uranusjr.com/) for more information.
 
+## Changes in this fork
+
+This fork (`davotoula/macdown-arm64`) is built on top of `tikkal/macdown-arm64` and adds the following security and hygiene fixes. See [PR #1](https://github.com/davotoula/macdown-arm64/pull/1) for the full diff.
+
+### Sparkle auto-update disabled
+
+The original repository ships with Sparkle 1.x configured to fetch updates from the upstream maintainer's server (`macdown.uranusjr.com`) and verify them against the upstream DSA public key. The `tikkal` fork did not change this configuration, which meant any binary built from that fork would silently auto-update from a server the fork has no control over — and would replace the arm64-only binary with upstream's x86_64 build.
+
+This fork removes the entire Sparkle integration:
+
+- `SUFeedURL`, `SUBetaFeedURL`, and `SUPublicDSAKeyFile` removed from `MacDown-Info.plist`.
+- `Sparkle` pod removed from `Podfile` and `Podfile.lock`.
+- `Sparkle.framework` no longer embedded; the `[CP] Embed Pods Frameworks` build phase has nothing to embed and is dropped by `pod install`.
+- `<customObject customClass="SUUpdater">` and the **Check for Updates…** menu item removed from `MainMenu.xib`.
+- Orphaned **Include pre-releases** checkbox removed from `MPGeneralPreferencesViewController.xib`.
+- `#import <Sparkle/SUUpdater.h>` and the `feedURLStringForUpdater:` delegate method removed from `MPMainController.m`.
+
+The `MPPreferences.updateIncludesPreReleases` `@dynamic` property is intentionally retained — it is harmless dead state in `NSUserDefaults`, and removing it would invalidate stored defaults for no security benefit.
+
+**Updates are no longer automatic.** To get a newer build, re-download from the [Releases page](https://github.com/davotoula/macdown-arm64/releases).
+
+### Other cleanup
+
+- Deleted the empty `MacDown/Resources/Styles/GitHub-2020.css` placeholder.
+
+### Build verification
+
+The branch was verified with `pod install` (no Sparkle in the resolved graph), `xcodebuild … -arch arm64 build` (BUILD SUCCEEDED), and `xcodebuild … test` (20/20 tests pass). The produced `MacDown.app` contains no `Frameworks/` directory, no Sparkle symbols in the binary, and no `SU*` keys in the bundled `Info.plist`.
+
+### Known follow-ups not in this fork
+
+- If auto-update is ever re-enabled, migrate to **Sparkle 2.x** (EdDSA signatures, sandboxed updater XPC) and a fork-controlled appcast URL with a freshly generated key pair. Sparkle 1.x's DSA signing is deprecated.
+- `MACOSX_DEPLOYMENT_TARGET = 14.6` (inherited from `tikkal`) excludes arm64 Macs running macOS 11–13. Lowering it to `11.0` would cover all arm64-capable hardware. This is a policy decision, not a security fix.
+- Translation strings for the removed XIB IDs in `Localization/*/MainMenu.strings` and `Localization/*/MPGeneralPreferencesViewController.strings` are now dangling. Cosmetic only — `ibtool` may warn, but the build still succeeds.
 
 ## Install
 
