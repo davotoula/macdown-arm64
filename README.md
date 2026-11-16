@@ -10,7 +10,7 @@ For x86 builds, visit the [project site](http://macdown.uranusjr.com/) for more 
 
 ## Changes in this fork
 
-This fork (`davotoula/macdown-arm64`) is built on top of `tikkal/macdown-arm64` and adds the following security and hygiene fixes. See [PR #1](https://github.com/davotoula/macdown-arm64/pull/1) for the full diff.
+This fork (`davotoula/macdown-arm64`) is built on top of `tikkal/macdown-arm64` and adds the following security, hygiene and build fixes. [PR #1](https://github.com/davotoula/macdown-arm64/pull/1) has the Sparkle removal.
 
 ### Sparkle auto-update disabled
 
@@ -31,16 +31,24 @@ The `MPPreferences.updateIncludesPreReleases` `@dynamic` property is intentional
 
 ### Other cleanup
 
-- Deleted the empty `MacDown/Resources/Styles/GitHub-2020.css` placeholder.
+- Deleted the empty `MacDown/Resources/Styles/GitHub-2020.css` placeholder, and removed the **Transpile Styles** build phase that kept recreating it. That phase ran `Tools/GitHub-style-generator`, which depends on the long-deprecated `node-sass`; without it the `make` pipeline silently wrote an empty file, which was then bundled into the app as a blank "GitHub-2020" preview style.
+
+### Building with current Xcode
+
+Out of the box the project no longer built with a current Xcode, and the app it produced was not validly signed. Fixed as follows:
+
+- **Deployment targets.** Xcode rejects deployment targets below macOS 12.0. The project-level `MACOSX_DEPLOYMENT_TARGET` (inherited by `macdown-cmd`) is raised from 10.8 to 14.6, matching the app target. In the `Podfile`, `platform :osx` is raised to 14.6, and a `post_install` hook pins every pod target to 14.6, because each podspec declares its own minimum (10.6–10.8). If the app's deployment target ever changes, update the `Podfile` to match.
+- **Code signing.** The `MacDown` target had `CODE_SIGN_IDENTITY = ""`, so Xcode never signed the bundle. The binary carried only the linker's ad-hoc signature with no sealed resources, and `codesign --verify` failed. It is now `"-"` (Sign to Run Locally), so the built app has a valid ad-hoc signature.
+- `.gitignore` now ignores the `Dependency/*/<os-build>/Xcode/` caches that `xcodebuild` writes next to the sub-projects.
 
 ### Build verification
 
-The branch was verified with `pod install` (no Sparkle in the resolved graph), `xcodebuild … -arch arm64 build` (BUILD SUCCEEDED), and `xcodebuild … test` (20/20 tests pass). The produced `MacDown.app` contains no `Frameworks/` directory, no Sparkle symbols in the binary, and no `SU*` keys in the bundled `Info.plist`.
+Verified with CocoaPods 1.17.0 and Xcode on macOS 27.2: `pod install` (no Sparkle in the resolved graph), a clean `xcodebuild … -configuration Release -arch arm64 build` with no command-line overrides (BUILD SUCCEEDED), and `xcodebuild … test` (20/20 tests pass). The produced `MacDown.app` passes `codesign --verify --deep --strict`. It contains no `Frameworks/` directory, no Sparkle symbols in the binary, no `SU*` keys in the bundled `Info.plist`, and no empty `GitHub-2020.css`.
 
 ### Known follow-ups not in this fork
 
 - If auto-update is ever re-enabled, migrate to **Sparkle 2.x** (EdDSA signatures, sandboxed updater XPC) and a fork-controlled appcast URL with a freshly generated key pair. Sparkle 1.x's DSA signing is deprecated.
-- `MACOSX_DEPLOYMENT_TARGET = 14.6` (inherited from `tikkal`) excludes arm64 Macs running macOS 11–13. Lowering it to `11.0` would cover all arm64-capable hardware. This is a policy decision, not a security fix.
+- `MACOSX_DEPLOYMENT_TARGET = 14.6` (inherited from `tikkal`) excludes arm64 Macs running macOS 11–13. Current Xcode can't target anything below 12.0, so lowering it to `12.0` would bring back macOS 12–13, but macOS 11 is out of reach. This is a policy decision, not a security fix. If you change it, change the `Podfile` (`platform` and the `post_install` hook) too.
 - Translation strings for the removed XIB IDs in `Localization/*/MainMenu.strings` and `Localization/*/MPGeneralPreferencesViewController.strings` are now dangling. Cosmetic only — `ibtool` may warn, but the build still succeeds.
 
 ## Install
@@ -83,7 +91,7 @@ The following editor themes and CSS files are extracted from [Mou](http://mouapp
 
 If you wish to build MacDown yourself, you will need the following components/tools:
 
-* OS X SDK (10.14 or later)
+* A current Xcode with the macOS SDK (the app targets macOS 14.6)
 * Git
 * [Bundler](http://bundler.io)
 
@@ -95,7 +103,7 @@ If you wish to build MacDown yourself, you will need the following components/to
 >
 > and report back.
 
-An appropriate SDK should be bundled with Xcode 5 or later versions.
+The SDK is bundled with Xcode.
 
 ### Environment Setup
 
@@ -106,7 +114,15 @@ After cloning the repository, run the following commands inside the repository r
     bundle exec pod install
     make -C Dependency/peg-markdown-highlight
 
-and open `MacDown.xcworkspace` in Xcode. The first command initialises the dependency submodule(s) used in MacDown; the second one installs dependencies managed by CocoaPods.
+and open `MacDown.xcworkspace` in Xcode. The first command initialises the dependency submodule(s) used in MacDown; the next two install the dependencies managed by CocoaPods; the last one generates the editor's syntax-highlighting parser.
+
+> Note: `Gemfile.lock` pins Bundler 2.7.1, which the macOS system Ruby doesn't have. A Homebrew CocoaPods (`brew install cocoapods`, then plain `pod install`) works too. A newer CocoaPods only bumps the `COCOAPODS:` stamp in `Podfile.lock`.
+
+To build a Release copy from the command line and install it for the current user:
+
+    xcodebuild -workspace MacDown.xcworkspace -scheme MacDown -configuration Release \
+        -arch arm64 -derivedDataPath build/DerivedData build
+    ditto build/DerivedData/Build/Products/Release/MacDown.app ~/Applications/MacDown.app
 
 Refer to the official guides of Git and CocoaPods if you need more instructions. If you run into build issues later on, try running the following commands to update dependencies:
 
