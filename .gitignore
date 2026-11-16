@@ -194,3 +194,7 @@ venv/
 # Aider
 .aider*
 
+
+# Xcode build-system caches written next to the sub-projects
+# (e.g. Dependency/version/27.2-27B52/Xcode/)
+Dependency/*/*/Xcode/
